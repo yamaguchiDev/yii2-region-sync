@@ -1,0 +1,15 @@
+{
+    "name": "yamaguchi/yii2-region-sync",
+    "description": "Модуль синхронизации товаров и остатков для региональных сайтов Yamaguchi",
+    "type": "yii2-extension",
+    "require": {
+        "php": ">=7.2.34",
+        "yiisoft/yii2": "~2.0.0",
+        "yiisoft/yii2-httpclient": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "yamaguchi\\regionsync\\": "src/"
+        }
+    }
+}
