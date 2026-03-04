@@ -25,6 +25,11 @@ class RegionSyncModule extends Module
     public $apiToken;
 
     /**
+     * @var string Секретный ключ для подписи запросов к API донора
+     */
+    public $apiSecret;
+
+    /**
      * @inheritdoc
      */
     public function init()
@@ -38,6 +43,10 @@ class RegionSyncModule extends Module
 
         if ($this->apiToken === null) {
             throw new \yii\base\InvalidConfigException('The "apiToken" property must be set.');
+        }
+
+        if ($this->apiSecret === null) {
+            throw new \yii\base\InvalidConfigException('The "apiSecret" property must be set.');
         }
     }
 }

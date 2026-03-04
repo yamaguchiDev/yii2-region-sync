@@ -11,8 +11,8 @@ trait SignedRequestTrait
 {
     private function signedRequest(string $endpoint, string $path)
     {
-        // Берем apiToken из настроек модуля, а не из глобальных params
-        $secret = Yii::$app->getModule('regionsync')->apiToken;
+        // Берем apiSecret из настроек модуля (для подписи запросов на донор)
+        $secret = Yii::$app->getModule('regionsync')->apiSecret;
         $timestamp = time();
         $signature = hash_hmac('sha256', $timestamp . '/' . $path, $secret);
 
