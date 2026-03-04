@@ -1,0 +1,34 @@
+# Composer dependencies
+/vendor/
+composer.lock
+
+# IDE and Editor folders
+/.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs and temp files
+/logs/
+/tmp/
+
+# Yii2 specific (just in case this was run inside a full app context)
+/runtime/
+/web/assets/
+
+# Environment files
+.env
+.env.local
+.env.*.local

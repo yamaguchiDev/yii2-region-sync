@@ -148,8 +148,11 @@ class ProductService
      */
     public function __construct()
     {
+        $module = Yii::$app->getModule('regionsync');
+        $baseUrl = $module ? $module->apiHost : (Yii::$app->params['mainSiteUrl'] ?? 'https://www.yamaguchi.ru');
+
         $this->remoteImageService = new RemoteImageService([
-            'baseUrl' => Yii::$app->params['mainSiteUrl'] ?? 'https://www.yamaguchi.ru',
+            'baseUrl' => $baseUrl,
             'timeout' => 30,
         ]);
     }

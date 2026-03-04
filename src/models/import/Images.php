@@ -132,15 +132,18 @@ class Images extends ActiveRecord
 
             // Определяем параметры из имени файла
             $isPng = strpos(strtolower($fileName), '.png') !== false ? 1 : 0;
-            $typeImage = 0; // стандартный тип
 
             // Заполняем данные
             $image->fileName = $fileName;
-            $image->type_image = $typeImage;
-            $image->alt = ''; // можно заполнить из метаданных товара
-            $image->title = '';
-            $image->action = 0;
-            $image->position = 0; // можно определить из имени файла или порядка
+            $image->type_image = $fileData['type_image'] ?? 0;
+            $image->alt = $fileData['alt'] ?? '';
+            $image->title = $fileData['title'] ?? '';
+            $image->action = $fileData['action'] ?? 0;
+            $image->position = $fileData['position'] ?? 0;
+            
+            if (isset($fileData['is_png'])) {
+                $image->is_png = $fileData['is_png'];
+            }
 
             if (!$image->save(false)) {
                 Yii::error("Ошибка сохранения записи изображения в БД: " . print_r($image->errors, true), __METHOD__);
