@@ -30,6 +30,13 @@ class RegionSyncModule extends Module
     public $apiSecret;
 
     /**
+     * @var int|null geo_city_id текущего регионального сайта из таблицы storage_city.
+     * Используется для фильтрации данных наличия при синхронизации с главным сайтом.
+     * Пример: 71902 для Новосибирска, 71711 для Москвы.
+     */
+    public $geoCityId;
+
+    /**
      * @inheritdoc
      */
     public function init()

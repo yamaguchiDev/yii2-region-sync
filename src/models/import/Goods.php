@@ -35,7 +35,8 @@ class Goods extends ActiveRecord
 
             // Текстовые поля (string)
             [['uri', 'name', 'model', 'alterCategoryName', 'text', 'shortDescBottom',
-                'desc', 'spec', 'specShort', 'related', 'promoSite', 'yandexDesc'], 'string'],
+                'desc', 'spec', 'specShort', 'related', 'promoSite', 'yandexDesc',
+                'created', 'updated'], 'string'],
 
             // Уникальность URI
             ['uri', 'unique', 'message' => 'Такой URI уже существует'],
@@ -80,6 +81,8 @@ class Goods extends ActiveRecord
             'yandexDesc' => 'Описание для Yandex',
             'creditDiscount' => 'Скидка на кредит',
             'isBestseller' => 'Бестселлер',
+            'created' => 'Дата создания',
+            'updated' => 'Дата обновления',
         ];
     }
 
@@ -94,7 +97,8 @@ class Goods extends ActiveRecord
             'action', 'actionSize', 'sticker', 'present', 'leather', 'forChildren',
             'isNew', 'isCategoryHit', 'isLanding', 'discontinued', 'published',
             'productPage', 'related', 'position', 'promoSite', 'isPreorder',
-            'isYandexXml', 'yandexDesc', 'creditDiscount', 'isBestseller'
+            'isYandexXml', 'yandexDesc', 'creditDiscount', 'isBestseller',
+            'created', 'updated'
         ];
     }
 
@@ -119,7 +123,7 @@ class Goods extends ActiveRecord
             'is_manual_popular', 'is_price_on_request', 'isNew_changed',
             'is_on_direct_link', 'category_id_for_compare', 'category_id_for_feed',
             'is_rent', 'multigallery', 'is_black_card', 'is_old', 'categoryId',
-            'categoryParentId', 'variantId', 'extraBrand', 'created', 'updated',
+            'categoryParentId', 'variantId', 'extraBrand',
             'deleted_at', 'slogan', 'font_size', 'benefit_phrase', 'notes',
             'desktop_video', 'mobile_video', 'md_description', 'slogan_color',
             'avitoDesc'
