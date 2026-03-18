@@ -9,6 +9,11 @@ class m260318_000002_create_new_storage_item_table extends Migration
 {
     public function safeUp()
     {
+        $tableOptions = null;
+        if ($this->db->driverName === 'mysql') {
+            $tableOptions = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE=InnoDB';
+        }
+
         $this->createTable('{{%new_storage_item}}', [
             'item_id'           => $this->integer()->notNull()->comment('ID товара в Борбозе'),
             'item_title'        => $this->string(250)->null()->comment('Название товара'),
@@ -17,7 +22,7 @@ class m260318_000002_create_new_storage_item_table extends Migration
             'netto_weight_item' => $this->float()->null()->comment('Вес нетто, кг'),
             'gross_weight_item' => $this->float()->null()->comment('Вес с коробкой, кг'),
             'npresence_comment' => $this->string(250)->null()->comment('Особенности расчёта наличия'),
-        ]);
+        ], $tableOptions);
 
         $this->addPrimaryKey('pk-new_storage_item', '{{%new_storage_item}}', 'item_id');
     }

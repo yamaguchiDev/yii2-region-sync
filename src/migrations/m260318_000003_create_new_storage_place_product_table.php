@@ -9,6 +9,11 @@ class m260318_000003_create_new_storage_place_product_table extends Migration
 {
     public function safeUp()
     {
+        $tableOptions = null;
+        if ($this->db->driverName === 'mysql') {
+            $tableOptions = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE=InnoDB';
+        }
+
         $this->createTable('{{%new_storage_place_product}}', [
             '_id'                 => $this->primaryKey()->comment('Внутренний ID записи'),
             'place_id'            => $this->integer()->notNull()->comment('ID склада'),
@@ -17,7 +22,7 @@ class m260318_000003_create_new_storage_place_product_table extends Migration
             '_point_for_sales_id' => $this->integer()->notNull()->defaultValue(0)->comment('ID точки продаж'),
             '_place_type_id'      => $this->integer()->notNull()->defaultValue(0)->comment('ID типа склада'),
             'created'             => $this->dateTime()->null()->comment('Дата последнего обновления'),
-        ]);
+        ], $tableOptions);
 
         $this->createIndex(
             'uq-new_spp-place_item',

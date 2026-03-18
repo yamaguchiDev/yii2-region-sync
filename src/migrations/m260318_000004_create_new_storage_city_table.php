@@ -9,6 +9,11 @@ class m260318_000004_create_new_storage_city_table extends Migration
 {
     public function safeUp()
     {
+        $tableOptions = null;
+        if ($this->db->driverName === 'mysql') {
+            $tableOptions = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE=InnoDB';
+        }
+
         $this->createTable('{{%new_storage_city}}', [
             'id'                  => $this->primaryKey()->comment('Внутренний ID'),
             'geo_city_id'         => $this->integer()->notNull()->comment('ID города по геобазе (уникальный)'),
@@ -17,7 +22,7 @@ class m260318_000004_create_new_storage_city_table extends Migration
             'system_name'         => $this->string(100)->null()->comment('Системное название (moscow, spb...)'),
             'products_updated_at' => $this->dateTime()->null()->comment('Последняя синхронизация остатков'),
             'places_updated_at'   => $this->dateTime()->null()->comment('Последняя синхронизация складов'),
-        ]);
+        ], $tableOptions);
 
         $this->createIndex('uq-new_storage_city-geo_city_id', '{{%new_storage_city}}', 'geo_city_id', true);
     }
