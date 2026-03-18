@@ -22,7 +22,7 @@ class StoragePlaceProduct extends ActiveRecord
 {
     public static function tableName(): string
     {
-        return '{{%storage_place_product}}';
+        return '{{%new_storage_place_product}}';
     }
 
     public function getStoragePlace(): ActiveQuery

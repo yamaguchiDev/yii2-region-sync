@@ -11,10 +11,10 @@ use yamaguchi\regionsync\traits\SignedRequestTrait;
  * Сервис синхронизации данных наличия с главного сайта.
  *
  * Запрашивает у главного сайта (yamaguchi.ru) пакет данных:
- *   - storage_place  (склады региона + московский главный)
- *   - storage_item   (справочник товаров)
- *   - storage_place_product (остатки)
- *   - storage_city   (мета-данные текущего региона)
+ *   - new_storage_place  (склады региона + московский главный)
+ *   - new_storage_item   (справочник товаров)
+ *   - new_storage_place_product (остатки)
+ *   - new_storage_city   (мета-данные текущего региона)
  *
  * и сохраняет их в локальные таблицы регионального сайта.
  *
@@ -73,14 +73,14 @@ class AvailabilitySyncService
         $counts = [];
         $transaction = Yii::$app->db->beginTransaction();
         try {
-            $counts['storage_place']         = $this->upsertStoragePlaces($data['storage_place'] ?? []);
-            $counts['storage_item']          = $this->upsertStorageItems($data['storage_item'] ?? []);
-            $counts['storage_place_product'] = $this->upsertStoragePlaceProducts($data['storage_place_product'] ?? []);
+            $counts['new_storage_place']         = $this->upsertStoragePlaces($data['storage_place'] ?? []);
+            $counts['new_storage_item']          = $this->upsertStorageItems($data['storage_item'] ?? []);
+            $counts['new_storage_place_product'] = $this->upsertStoragePlaceProducts($data['storage_place_product'] ?? []);
             $this->upsertStorageCity($data['storage_city'] ?? []);
 
             // Обновляем timestamp
             Yii::$app->db->createCommand(
-                'UPDATE {{%storage_city}} SET products_updated_at = NOW(), places_updated_at = NOW() WHERE geo_city_id = :id',
+                'UPDATE {{%new_storage_city}} SET products_updated_at = NOW(), places_updated_at = NOW() WHERE geo_city_id = :id',
                 [':id' => $this->geoCityId]
             )->execute();
 
@@ -150,7 +150,7 @@ class AvailabilitySyncService
     }
 
     /**
-     * Upsert storage_place
+     * Upsert new_storage_place
      * @param array[] $places
      */
     private function upsertStoragePlaces(array $places): int
@@ -160,7 +160,7 @@ class AvailabilitySyncService
         $count = 0;
         foreach ($places as $place) {
             Yii::$app->db->createCommand('
-                INSERT INTO {{%storage_place}}
+                INSERT INTO {{%new_storage_place}}
                     (place_id, geo_location_id, geo_location_name, geo_city_id,
                      point_for_sales_name, town_city_id, point_for_sales_id,
                      place_name, type_code, closed)
@@ -196,7 +196,7 @@ class AvailabilitySyncService
     }
 
     /**
-     * Upsert storage_item
+     * Upsert new_storage_item
      * @param array[] $items
      */
     private function upsertStorageItems(array $items): int
@@ -206,7 +206,7 @@ class AvailabilitySyncService
         $count = 0;
         foreach ($items as $item) {
             Yii::$app->db->createCommand('
-                INSERT INTO {{%storage_item}}
+                INSERT INTO {{%new_storage_item}}
                     (item_id, item_title, price, soon, netto_weight_item, gross_weight_item, npresence_comment)
                 VALUES
                     (:item_id, :item_title, :price, :soon, :netto, :gross, :comment)
@@ -232,7 +232,7 @@ class AvailabilitySyncService
     }
 
     /**
-     * Upsert storage_place_product
+     * Upsert new_storage_place_product
      * @param array[] $products
      */
     private function upsertStoragePlaceProducts(array $products): int
@@ -242,7 +242,7 @@ class AvailabilitySyncService
         $count = 0;
         foreach ($products as $product) {
             Yii::$app->db->createCommand('
-                INSERT INTO {{%storage_place_product}}
+                INSERT INTO {{%new_storage_place_product}}
                     (place_id, item_id, quantity, _point_for_sales_id, _place_type_id, created)
                 VALUES
                     (:place_id, :item_id, :quantity, 0, 0, NOW())
@@ -260,7 +260,56 @@ class AvailabilitySyncService
     }
 
     /**
-     * Upsert storage_city
+     * Загружает список ВСЕХ городов с главного сайта и сохраняет их в new_storage_city.
+     * Используется для инициализации системы на новом проекте.
+     *
+     * @return array{success: bool, message: string, count: int}
+     */
+    public function seedCities(): array
+    {
+        $path     = self::ENDPOINT_PATH;
+        $endpoint = $this->apiHost . '/' . $path . '?geoCityId=0'; // 0 = все города
+
+        try {
+            $signedUrl = $this->signedRequest($endpoint, $path);
+            $response = $this->httpClient->createRequest()
+                ->setMethod('GET')
+                ->setUrl($signedUrl)
+                ->send();
+
+            if (!$response->isOk) {
+                return ['success' => false, 'message' => "HTTP {$response->statusCode}", 'count' => 0];
+            }
+
+            $data = json_decode($response->content, true);
+            $cities = $data['storage_city'] ?? [];
+
+            if (empty($cities)) {
+                return ['success' => false, 'message' => 'Список городов пуст', 'count' => 0];
+            }
+
+            $count = 0;
+            $transaction = Yii::$app->db->beginTransaction();
+            try {
+                foreach ($cities as $city) {
+                    $this->upsertStorageCity($city);
+                    $count++;
+                }
+                $transaction->commit();
+            } catch (\Exception $e) {
+                $transaction->rollBack();
+                throw $e;
+            }
+
+            return ['success' => true, 'message' => 'OK', 'count' => $count];
+        } catch (\Exception $e) {
+            Yii::error("AvailabilitySync seedCities error: " . $e->getMessage(), __CLASS__);
+            return ['success' => false, 'message' => $e->getMessage(), 'count' => 0];
+        }
+    }
+
+    /**
+     * Upsert new_storage_city
      * @param array $city
      */
     private function upsertStorageCity(array $city): void
@@ -270,7 +319,7 @@ class AvailabilitySyncService
         }
 
         Yii::$app->db->createCommand('
-            INSERT INTO {{%storage_city}}
+            INSERT INTO {{%new_storage_city}}
                 (geo_city_id, geo_location_id, geo_location_name, system_name)
             VALUES
                 (:geo_city_id, :geo_location_id, :geo_location_name, :system_name)
@@ -286,3 +335,4 @@ class AvailabilitySyncService
         ])->execute();
     }
 }
+

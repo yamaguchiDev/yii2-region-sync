@@ -33,6 +33,6 @@ class StoragePlace extends ActiveRecord
 
     public static function tableName(): string
     {
-        return '{{%storage_place}}';
+        return '{{%new_storage_place}}';
     }
 }

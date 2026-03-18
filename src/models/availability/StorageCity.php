@@ -12,6 +12,8 @@ use yii\db\ActiveRecord;
  * @property int    $geo_location_id
  * @property string $geo_location_name
  * @property string $system_name
+ * @property int    $loc_city_id      ID главного города региона по геобазе
+ * @property int    $active           Активен ли регион (1 — да, 0 — нет)
  * @property string $products_updated_at
  * @property string $places_updated_at
  */
@@ -22,6 +24,6 @@ class StorageCity extends ActiveRecord
 
     public static function tableName(): string
     {
-        return '{{%storage_city}}';
+        return '{{%new_storage_city}}';
     }
 }

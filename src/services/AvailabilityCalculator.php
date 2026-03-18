@@ -15,7 +15,7 @@ use Yii;
  * главного сайта (yamaguchi.ru), упрощена до расчёта по региону.
  *
  * Работает полностью автономно, опирается только на локальные таблицы:
- *   storage_place, storage_place_product, storage_item
+ *   new_storage_place, new_storage_place_product, new_storage_item
  *
  * Использование:
  * ```php
@@ -149,7 +149,7 @@ class AvailabilityCalculator
         $query = StoragePlaceProduct::find()
             ->alias('spp')
             ->select(new \yii\db\Expression('COALESCE(SUM(spp.quantity), 0) as total'))
-            ->leftJoin(['sp' => 'storage_place'], 'sp.place_id = spp.place_id')
+            ->leftJoin(['sp' => 'new_storage_place'], 'sp.place_id = spp.place_id')
             ->where(['spp.item_id' => $itemId])
             ->andWhere(['>', 'spp.quantity', 0]);
 
@@ -181,7 +181,7 @@ class AvailabilityCalculator
         $result = StoragePlaceProduct::find()
             ->alias('spp')
             ->select(new \yii\db\Expression('COALESCE(SUM(spp.quantity), 0) as total'))
-            ->leftJoin(['sp' => 'storage_place'], 'sp.place_id = spp.place_id')
+            ->leftJoin(['sp' => 'new_storage_place'], 'sp.place_id = spp.place_id')
             ->where([
                 'spp.item_id'    => $itemId,
                 'sp.type_code'   => StoragePlace::TYPE_CODE_SHOWROOM,

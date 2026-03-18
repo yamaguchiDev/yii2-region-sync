@@ -19,6 +19,6 @@ class StorageItem extends ActiveRecord
 {
     public static function tableName(): string
     {
-        return '{{%storage_item}}';
+        return '{{%new_storage_item}}';
     }
 }
