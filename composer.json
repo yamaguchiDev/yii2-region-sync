@@ -3,7 +3,7 @@
     "description": "Модуль синхронизации товаров и остатков для региональных сайтов Yamaguchi",
     "type": "yii2-extension",
     "require": {
-        "php": ">=7.4.0",
+        "php": ">=7.2.0",
         "yiisoft/yii2": "~2.0.13",
         "yiisoft/yii2-httpclient": "~2.0.0",
         "fxp/composer-asset-plugin": "^1.4"
