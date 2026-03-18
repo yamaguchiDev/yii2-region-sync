@@ -36,26 +36,27 @@ class AvailabilityCommand extends Controller
     /**
      * Синхронизирует данные наличия с главного сайта.
      *
-     * Опции:
-     *   --no-cache  — не использовать кэш-сброс после синхронизации (для отладки)
-     *
+     * @param int|null $geoCityId ID города (если не задан в конфиге)
      * @return int
      */
-    public function actionSync(): int
+    public function actionSync(int $geoCityId = null): int
     {
         /** @var \yamaguchi\regionsync\RegionSyncModule $module */
         $module = Yii::$app->getModule('regionsync');
 
-        if (!$module->geoCityId) {
-            $this->stderr("Ошибка: параметр geoCityId не задан в конфиге модуля 'regionsync'." . PHP_EOL);
+        $cityId = $geoCityId ?: $module->geoCityId;
+
+        if (!$cityId) {
+            $this->stderr("Ошибка: параметр geoCityId не задан. Передайте его аргументом: yii availability/sync <geoCityId>" . PHP_EOL);
             return ExitCode::CONFIG;
         }
 
-        $this->stdout("[AvailabilitySync] Старт синхронизации для geo_city_id={$module->geoCityId}" . PHP_EOL);
+        $this->stdout("[AvailabilitySync] Старт синхронизации для geo_city_id={$cityId}" . PHP_EOL);
         $this->stdout("[AvailabilitySync] Хост: {$module->apiHost}" . PHP_EOL);
 
-        $service = new AvailabilitySyncService($module->apiHost, $module->geoCityId);
+        $service = new AvailabilitySyncService($module->apiHost, $cityId);
         $result  = $service->sync();
+// ... (остальное без изменений)
 
         if (!$result['success']) {
             $this->stderr("[AvailabilitySync] ОШИБКА: {$result['message']}" . PHP_EOL);
@@ -173,25 +174,29 @@ class AvailabilityCommand extends Controller
      * Проверяет текущее наличие товара (без синхронизации с сервером).
      *
      * Пример: php yii availability/check 1234
+     *         php yii availability/check 1234 71744
      *
      * @param int $itemId
+     * @param int|null $geoCityId ID города (если не задан в конфиге)
      * @return int
      */
-    public function actionCheck(int $itemId): int
+    public function actionCheck(int $itemId, int $geoCityId = null): int
     {
         /** @var \yamaguchi\regionsync\RegionSyncModule $module */
         $module = Yii::$app->getModule('regionsync');
 
-        if (!$module->geoCityId) {
-            $this->stderr("Ошибка: geoCityId не задан" . PHP_EOL);
+        $cityId = $geoCityId ?: $module->geoCityId;
+
+        if (!$cityId) {
+            $this->stderr("Ошибка: geoCityId не задан. Передайте его вторым параметром: yii availability/check $itemId <geoCityId>" . PHP_EOL);
             return ExitCode::CONFIG;
         }
 
         $calculator = new \yamaguchi\regionsync\services\AvailabilityCalculator();
         $calculator->useCache = false;
-        $result = $calculator->calculate($itemId, $module->geoCityId);
+        $result = $calculator->calculate($itemId, $cityId);
 
-        $this->stdout("itemId=$itemId, geoCityId={$module->geoCityId}" . PHP_EOL);
+        $this->stdout("itemId=$itemId, geoCityId={$cityId}" . PHP_EOL);
         $this->stdout("  availability:  {$result->availability}" . PHP_EOL);
         $this->stdout("  value:         " . ($result->value ?? 'null') . PHP_EOL);
         $this->stdout("  hasTestDrive:  " . ($result->hasTestDrive ? 'true' : 'false') . PHP_EOL);

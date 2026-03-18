@@ -63,4 +63,16 @@ class AvailabilityResult
         }
         return 'Нет данных';
     }
+
+    /**
+     * Можно ли купить товар прямо сейчас?
+     */
+    public function isAvailable(): bool
+    {
+        return in_array($this->availability, [
+            self::AVAILABILITY_ON_MAIN,
+            self::AVAILABILITY_ON_SHOWROOM,
+            self::AVAILABILITY_CHECK
+        ]);
+    }
 }
