@@ -55,14 +55,9 @@ class AvailabilityResult
         switch ($this->availability) {
             case self::AVAILABILITY_DISCONTINUED: return 'Снят с производства';
             case self::AVAILABILITY_PREORDER:     return 'Предзаказ';
-            case self::AVAILABILITY_ON_MAIN:
-            case self::AVAILABILITY_CHECK:
-            case self::AVAILABILITY_ON_SHOWROOM:
-                return 'Есть в наличии';
-            case self::AVAILABILITY_NO:
-                return $this->hasTestDrive ? 'Есть в наличии' : 'Нет в наличии';
         }
-        return 'Нет данных';
+        
+        return $this->isAvailable() ? 'Есть в наличии' : 'Нет в наличии';
     }
 
     /**
