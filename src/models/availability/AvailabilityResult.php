@@ -55,8 +55,18 @@ class AvailabilityResult
         switch ($this->availability) {
             case self::AVAILABILITY_DISCONTINUED: return 'Снят с производства';
             case self::AVAILABILITY_PREORDER:     return 'Предзаказ';
+            // Мало товара (1–2 шт) — уточняйте наличие
+            case self::AVAILABILITY_CHECK:        return 'Уточняйте по телефону';
         }
-        
+
+        // Если в регионе нет, но есть доставка из Москвы
+        if (
+            $this->availability === self::AVAILABILITY_NO
+            && $this->deliveryFrom === self::DELIVERY_FROM_MOSCOW
+        ) {
+            return 'Есть доставка из Москвы';
+        }
+
         return $this->isAvailable() ? 'Есть в наличии' : 'Нет в наличии';
     }
 
@@ -65,6 +75,14 @@ class AvailabilityResult
      */
     public function isAvailable(): bool
     {
+        // Доставка из Москвы тоже считается «доступным» (можно заказать)
+        if (
+            $this->availability === self::AVAILABILITY_NO
+            && $this->deliveryFrom === self::DELIVERY_FROM_MOSCOW
+        ) {
+            return true;
+        }
+
         return in_array($this->availability, [
             self::AVAILABILITY_ON_MAIN,
             self::AVAILABILITY_ON_SHOWROOM,
