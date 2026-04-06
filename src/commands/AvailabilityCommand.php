@@ -65,9 +65,9 @@ class AvailabilityCommand extends Controller
 
         $counts = $result['counts'];
         $this->stdout("[AvailabilitySync] Успешно:" . PHP_EOL);
-        $this->stdout("  storage_place:         {$counts['storage_place']} записей" . PHP_EOL);
-        $this->stdout("  storage_item:          {$counts['storage_item']} записей" . PHP_EOL);
-        $this->stdout("  storage_place_product: {$counts['storage_place_product']} записей" . PHP_EOL);
+        $this->stdout("  new_storage_place:         " . ($counts['new_storage_place'] ?? 0) . " записей" . PHP_EOL);
+        $this->stdout("  new_storage_item:          " . ($counts['new_storage_item'] ?? 0) . " записей" . PHP_EOL);
+        $this->stdout("  new_storage_place_product: " . ($counts['new_storage_place_product'] ?? 0) . " записей" . PHP_EOL);
         $this->stdout("[AvailabilitySync] Завершено " . date('Y-m-d H:i:s') . PHP_EOL);
 
         return ExitCode::OK;
@@ -202,6 +202,50 @@ class AvailabilityCommand extends Controller
         $this->stdout("  hasTestDrive:  " . ($result->hasTestDrive ? 'true' : 'false') . PHP_EOL);
         $this->stdout("  deliveryFrom:  " . ($result->deliveryFrom ?? 'null') . PHP_EOL);
         $this->stdout("  title:         " . $result->getTitle() . PHP_EOL);
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Логирует наличие товара по всем городам из new_storage_city.
+     *
+     * Пример: php yii availability/log-item 188
+     */
+    public function actionLogItem(int $itemId): int
+    {
+        $cities = Yii::$app->db->createCommand(
+            'SELECT geo_city_id, COALESCE(geo_location_name, system_name, geo_city_id) AS name
+             FROM {{%new_storage_city}}
+             ORDER BY geo_location_name, geo_city_id'
+        )->queryAll();
+
+        if (empty($cities)) {
+            $this->stderr("[LogItem] Таблица new_storage_city пуста. Сначала выполните sync/seed-cities." . PHP_EOL);
+            return ExitCode::DATAERR;
+        }
+
+        $calculator = new \yamaguchi\regionsync\services\AvailabilityCalculator();
+        $calculator->useCache = false;
+
+        foreach ($cities as $city) {
+            $geoCityId = (int)$city['geo_city_id'];
+            $result = $calculator->calculate($itemId, $geoCityId);
+
+            $message = sprintf(
+                '[RegionSync][ItemAvailability] itemId=%d geoCityId=%d city="%s" availability=%s value=%s hasTestDrive=%s deliveryFrom=%s title="%s"',
+                $itemId,
+                $geoCityId,
+                $city['name'],
+                $result->availability,
+                $result->value === null ? 'null' : $result->value,
+                $result->hasTestDrive ? 'true' : 'false',
+                $result->deliveryFrom === null ? 'null' : $result->deliveryFrom,
+                $result->getTitle()
+            );
+
+            Yii::info($message, 'regionsync.availability');
+            $this->stdout($message . PHP_EOL);
+        }
 
         return ExitCode::OK;
     }

@@ -112,14 +112,18 @@ class AvailabilityCalculator
      */
     private function getIsDiscontinued($itemId): bool
     {
-        // goods.discontinued синхронизируется через ImportController
-        return (bool) Yii::$app->db->createCommand('
-            SELECT COUNT(*) FROM {{%goods}}
-            WHERE discontinued = 1
-            AND id IN (
-                SELECT productId FROM {{%new_product_variant}} WHERE itemId IN (:ids)
-            )
-        ', [':ids' => implode(',', (array)$itemId)])->queryScalar();
+        $ids = array_values(array_filter(array_map('intval', (array)$itemId)));
+
+        if (empty($ids)) {
+            return false;
+        }
+
+        return (bool) (new \yii\db\Query())
+            ->from(['g' => '{{%goods}}'])
+            ->innerJoin(['npv' => '{{%new_product_variant}}'], 'npv.productId = g.id')
+            ->where(['g.discontinued' => 1])
+            ->andWhere(['npv.itemId' => $ids])
+            ->exists();
     }
 
     /**
@@ -128,13 +132,18 @@ class AvailabilityCalculator
      */
     private function getIsPreorder($itemId): bool
     {
-        return (bool) Yii::$app->db->createCommand('
-            SELECT COUNT(*) FROM {{%goods}}
-            WHERE isPreorder = 1
-            AND id IN (
-                SELECT productId FROM {{%new_product_variant}} WHERE itemId IN (:ids)
-            )
-        ', [':ids' => implode(',', (array)$itemId)])->queryScalar();
+        $ids = array_values(array_filter(array_map('intval', (array)$itemId)));
+
+        if (empty($ids)) {
+            return false;
+        }
+
+        return (bool) (new \yii\db\Query())
+            ->from(['g' => '{{%goods}}'])
+            ->innerJoin(['npv' => '{{%new_product_variant}}'], 'npv.productId = g.id')
+            ->where(['g.isPreorder' => 1])
+            ->andWhere(['npv.itemId' => $ids])
+            ->exists();
     }
 
     /**
