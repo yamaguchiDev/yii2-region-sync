@@ -17,6 +17,7 @@ class PriceImporter
         $url = $site['url'] ?? $site['host']; // Поддержка старого и нового формата
         $errors = [];
         $updated = 0;
+        $skippedWithoutItemId = 0;
 
         // Получаем данные
         $dataFromYamaguchi = $this->fetchUrl($url);
@@ -32,9 +33,14 @@ class PriceImporter
 
         // Обработка каждого товара
         foreach ($dataFromYamaguchi as $item) {
-            // Проверка обязательны х полей
-            if (empty($item['itemId']) || !isset($item['price'])) {
-                $errors[] = 'Отсутствует itemId или price для элемента: ' . json_encode($item);
+            // Часть исторических записей приходит без itemId и не может быть сопоставлена локально.
+            if (empty($item['itemId'])) {
+                $skippedWithoutItemId++;
+                continue;
+            }
+
+            if (!isset($item['price'])) {
+                $errors[] = 'Отсутствует price для элемента: ' . json_encode($item);
                 continue;
             }
 
@@ -88,6 +94,7 @@ class PriceImporter
             'status' => 'ok',
             'site' => $site['id'] ?? 'unknown',
             'updated' => $updated,
+            'skipped_without_item_id' => $skippedWithoutItemId,
         ];
 
         // Если были ошибки - добавляем их в ответ
