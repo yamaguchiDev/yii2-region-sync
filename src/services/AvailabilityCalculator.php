@@ -37,6 +37,35 @@ class AvailabilityCalculator
     public $useCache = true;
 
     /**
+     * Подробная диагностика наличия товара для заданного региона.
+     *
+     * Метод не использует кэш и возвращает как итоговый статус,
+     * так и промежуточные данные расчёта для отладки.
+     *
+     * @param int|int[] $itemId
+     */
+    public function inspect($itemId, int $geoCityId): array
+    {
+        $data = $this->calculateData($itemId, $geoCityId);
+        $result = $data['result'];
+
+        return [
+            'itemId' => is_array($itemId) ? $itemId : (int)$itemId,
+            'geoCityId' => $geoCityId,
+            'isDiscontinued' => $data['isDiscontinued'],
+            'isPreorder' => $data['isPreorder'],
+            'sumInRegion' => $data['sumInRegion'],
+            'sumOnShowroom' => $data['sumOnShowroom'],
+            'availability' => $result->availability,
+            'value' => $result->value,
+            'hasTestDrive' => $result->hasTestDrive,
+            'deliveryFrom' => $result->deliveryFrom,
+            'title' => $result->getTitle(),
+            'isAvailable' => $result->isAvailable(),
+        ];
+    }
+
+    /**
      * Рассчитать наличие товара для заданного региона
      *
      * @param int|int[] $itemId  ID товара (или массив ID вариантов)
@@ -60,23 +89,53 @@ class AvailabilityCalculator
             }
         }
 
-        // 1. Проверяем снятие с производства и предзаказ через goods
-        //    Эти данные синхронизируются через существующий ImportController
-        if ($this->getIsDiscontinued($itemId)) {
-            $result->availability = AvailabilityResult::AVAILABILITY_DISCONTINUED;
-            return $this->storeInCache($cacheKey, $result);
+        $data = $this->calculateData($itemId, $geoCityId);
+
+        return $this->storeInCache($cacheKey, $data['result']);
+    }
+
+    /**
+     * Собирает итоговый результат и промежуточные данные расчёта.
+     *
+     * @param int|int[] $itemId
+     */
+    private function calculateData($itemId, int $geoCityId): array
+    {
+        $result = new AvailabilityResult();
+
+        $data = [
+            'result' => $result,
+            'isDiscontinued' => false,
+            'isPreorder' => false,
+            'sumInRegion' => 0,
+            'sumOnShowroom' => 0,
+        ];
+
+        if (!$itemId) {
+            return $data;
         }
 
-        if ($this->getIsPreorder($itemId)) {
+        // 1. Проверяем снятие с производства и предзаказ через goods
+        //    Эти данные синхронизируются через существующий ImportController
+        $data['isDiscontinued'] = $this->getIsDiscontinued($itemId);
+        if ($data['isDiscontinued']) {
+            $result->availability = AvailabilityResult::AVAILABILITY_DISCONTINUED;
+            return $data;
+        }
+
+        $data['isPreorder'] = $this->getIsPreorder($itemId);
+        if ($data['isPreorder']) {
             $result->availability = AvailabilityResult::AVAILABILITY_PREORDER;
-            return $this->storeInCache($cacheKey, $result);
+            return $data;
         }
 
         // 2. Суммируем остатки по основным складам региона
         $sum = $this->getSumInRegion($itemId, $geoCityId);
+        $data['sumInRegion'] = $sum;
 
         // 3. Суммируем остатки по шоу-рум складам региона
         $sumShowroom = $this->getSumOnShowroom($itemId, $geoCityId);
+        $data['sumOnShowroom'] = $sumShowroom;
 
         // 4. Устанавливаем точное значение, если товара мало (1–2 шт)
         if ($sum >= self::QUANTITY_SHOW_MIN && $sum <= self::QUANTITY_SHOW_MAX) {
@@ -103,7 +162,7 @@ class AvailabilityCalculator
             $result->deliveryFrom = $this->getDeliveryFrom($itemId);
         }
 
-        return $this->storeInCache($cacheKey, $result);
+        return $data;
     }
 
     /**

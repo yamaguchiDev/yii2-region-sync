@@ -116,4 +116,25 @@ class RegionSyncModule extends Module
         $calculator = new services\AvailabilityCalculator();
         return $calculator->calculate((int)$itemId, (int)$this->geoCityId);
     }
+
+    /**
+     * Получить подробный отчёт по наличию товара в текущем или указанном регионе.
+     *
+     * @param int|string $itemId
+     * @param int|null $geoCityId
+     * @return array|null
+     */
+    public function checkProductAvailability($itemId, int $geoCityId = null)
+    {
+        $cityId = $geoCityId ?: (int)$this->geoCityId;
+
+        if (!$cityId) {
+            return null;
+        }
+
+        $calculator = new services\AvailabilityCalculator();
+        $calculator->useCache = false;
+
+        return $calculator->inspect((int)$itemId, $cityId);
+    }
 }

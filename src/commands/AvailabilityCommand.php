@@ -194,14 +194,19 @@ class AvailabilityCommand extends Controller
 
         $calculator = new \yamaguchi\regionsync\services\AvailabilityCalculator();
         $calculator->useCache = false;
-        $result = $calculator->calculate($itemId, $cityId);
+        $report = $calculator->inspect($itemId, $cityId);
 
         $this->stdout("itemId=$itemId, geoCityId={$cityId}" . PHP_EOL);
-        $this->stdout("  availability:  {$result->availability}" . PHP_EOL);
-        $this->stdout("  value:         " . ($result->value ?? 'null') . PHP_EOL);
-        $this->stdout("  hasTestDrive:  " . ($result->hasTestDrive ? 'true' : 'false') . PHP_EOL);
-        $this->stdout("  deliveryFrom:  " . ($result->deliveryFrom ?? 'null') . PHP_EOL);
-        $this->stdout("  title:         " . $result->getTitle() . PHP_EOL);
+        $this->stdout("  isDiscontinued:" . ($report['isDiscontinued'] ? ' true' : ' false') . PHP_EOL);
+        $this->stdout("  isPreorder:    " . ($report['isPreorder'] ? 'true' : 'false') . PHP_EOL);
+        $this->stdout("  sumInRegion:   " . $report['sumInRegion'] . PHP_EOL);
+        $this->stdout("  sumOnShowroom: " . $report['sumOnShowroom'] . PHP_EOL);
+        $this->stdout("  availability:  {$report['availability']}" . PHP_EOL);
+        $this->stdout("  value:         " . ($report['value'] ?? 'null') . PHP_EOL);
+        $this->stdout("  hasTestDrive:  " . ($report['hasTestDrive'] ? 'true' : 'false') . PHP_EOL);
+        $this->stdout("  deliveryFrom:  " . ($report['deliveryFrom'] ?? 'null') . PHP_EOL);
+        $this->stdout("  isAvailable:   " . ($report['isAvailable'] ? 'true' : 'false') . PHP_EOL);
+        $this->stdout("  title:         " . $report['title'] . PHP_EOL);
 
         return ExitCode::OK;
     }
