@@ -5,6 +5,7 @@ namespace yamaguchi\regionsync\components;
 use yamaguchi\regionsync\models\ProductVariant;
 use Yii;
 use yii\httpclient\Client;
+use yii\helpers\FileHelper;
 use yamaguchi\regionsync\traits\SignedRequestTrait;
 
 class PriceImporter
@@ -30,6 +31,8 @@ class PriceImporter
                 'updated' => 0
             ];
         }
+
+        $this->logIncomingItemIds($dataFromYamaguchi, $url);
 
         // Обработка каждого товара
         foreach ($dataFromYamaguchi as $item) {
@@ -106,6 +109,70 @@ class PriceImporter
         return $result;
     }
 
+    private function logIncomingItemIds(array $items, $sourceUrl)
+    {
+        $itemIds = [];
+        $skippedItems = [];
+        $withoutItemId = 0;
+
+        foreach ($items as $index => $item) {
+            if (is_array($item) && !empty($item['itemId'])) {
+                $itemIds[] = (string)$item['itemId'];
+                continue;
+            }
+
+            $withoutItemId++;
+            $skippedItems[] = [
+                'index' => $index,
+                'item' => $item,
+            ];
+        }
+
+        try {
+            $logDir = Yii::getAlias('@runtime/logs');
+            FileHelper::createDirectory($logDir);
+            $logFile = $logDir . DIRECTORY_SEPARATOR . 'regionsync-price-item-ids.log';
+            $date = date('Y-m-d H:i:s');
+
+            $header = sprintf(
+                '[%s] source=%s total=%d with_item_id=%d without_item_id=%d unique_item_id=%d',
+                $date,
+                $sourceUrl,
+                count($items),
+                count($itemIds),
+                $withoutItemId,
+                count(array_unique($itemIds))
+            );
+
+            file_put_contents($logFile, $header . PHP_EOL, FILE_APPEND | LOCK_EX);
+
+            file_put_contents(
+                $logFile,
+                sprintf('[%s] itemIds: %s', $date, implode(',', $itemIds)) . PHP_EOL,
+                FILE_APPEND | LOCK_EX
+            );
+
+            if (!empty($skippedItems)) {
+                $skippedLogFile = $logDir . DIRECTORY_SEPARATOR . 'regionsync-price-skipped-without-item-id.log';
+                file_put_contents(
+                    $skippedLogFile,
+                    sprintf('[%s] source=%s skipped_without_item_id=%d', $date, $sourceUrl, count($skippedItems)) . PHP_EOL,
+                    FILE_APPEND | LOCK_EX
+                );
+
+                foreach ($skippedItems as $skippedItem) {
+                    file_put_contents(
+                        $skippedLogFile,
+                        json_encode($skippedItem, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
+                        FILE_APPEND | LOCK_EX
+                    );
+                }
+            }
+        } catch (\Exception $e) {
+            Yii::warning('Не удалось записать лог itemId импорта цен: ' . $e->getMessage(), __METHOD__);
+        }
+    }
+
 
     private static $httpClient = null;
 
@@ -135,6 +202,11 @@ class PriceImporter
         \Yii::$app->cache->delete($cacheKey);
 
         $path = 'regions/export-data/get-prices';
+        $url = rtrim($url, '/');
+        if (substr($url, -strlen($path)) !== $path) {
+            $url .= '/' . $path;
+        }
+
         $url = $this->signedRequest($url, $path);
 
         $data = \Yii::$app->cache->getOrSet(
