@@ -43,6 +43,10 @@ class RegionSyncModule extends Module
     {
         parent::init();
 
+        if (\Yii::$app instanceof \yii\console\Application) {
+            $this->controllerNamespace = 'yamaguchi\regionsync\commands';
+        }
+
         // инициализация модуля
         if ($this->apiHost === null) {
             throw new \yii\base\InvalidConfigException('The "apiHost" property must be set.');
