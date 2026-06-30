@@ -5,7 +5,9 @@ namespace yamaguchi\regionsync\commands;
 use Yii;
 use yii\console\Controller;
 use yii\console\ExitCode;
+use yii\httpclient\Client;
 use yamaguchi\regionsync\services\AvailabilitySyncService;
+use yamaguchi\regionsync\traits\SignedRequestTrait;
 
 /**
  * Консольная команда для синхронизации данных наличия с главного сайта.
@@ -31,6 +33,8 @@ use yamaguchi\regionsync\services\AvailabilitySyncService;
  */
 class AvailabilityCommand extends Controller
 {
+    use SignedRequestTrait;
+
     public $defaultAction = 'sync';
 
     /**
@@ -212,6 +216,90 @@ class AvailabilityCommand extends Controller
     }
 
     /**
+     * Сравнивает локальные остатки товара с текущим ответом донора.
+     *
+     * Пример: php yii availability/compare 188 67118
+     *
+     * @param int $itemId
+     * @param int $geoCityId
+     * @return int
+     */
+    public function actionCompare(int $itemId, int $geoCityId): int
+    {
+        /** @var \yamaguchi\regionsync\RegionSyncModule $module */
+        $module = Yii::$app->getModule('regionsync');
+
+        if (!$module) {
+            $this->stderr('Ошибка: модуль regionsync не подключён.' . PHP_EOL);
+            return ExitCode::CONFIG;
+        }
+
+        $remoteData = $this->fetchRemoteAvailabilityData($module->apiHost, $geoCityId);
+        if ($remoteData === null) {
+            $this->stderr('Ошибка: не удалось получить данные наличия с донора.' . PHP_EOL);
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $remoteRows = $this->filterPlaceProductsByItemId($remoteData['storage_place_product'] ?? [], $itemId);
+        $localRows = $this->getLocalPlaceProducts($itemId, $geoCityId);
+
+        $remoteByPlace = $this->indexQuantityByPlace($remoteRows);
+        $localByPlace = $this->indexQuantityByPlace($localRows);
+
+        $allPlaceIds = array_values(array_unique(array_merge(array_keys($remoteByPlace), array_keys($localByPlace))));
+        sort($allPlaceIds);
+
+        $missingLocal = [];
+        $extraLocal = [];
+        $quantityDiff = [];
+
+        foreach ($allPlaceIds as $placeId) {
+            $hasRemote = array_key_exists($placeId, $remoteByPlace);
+            $hasLocal = array_key_exists($placeId, $localByPlace);
+
+            if ($hasRemote && !$hasLocal) {
+                $missingLocal[$placeId] = $remoteByPlace[$placeId];
+                continue;
+            }
+
+            if (!$hasRemote && $hasLocal) {
+                $extraLocal[$placeId] = $localByPlace[$placeId];
+                continue;
+            }
+
+            if ((int)$remoteByPlace[$placeId] !== (int)$localByPlace[$placeId]) {
+                $quantityDiff[$placeId] = [
+                    'remote' => (int)$remoteByPlace[$placeId],
+                    'local' => (int)$localByPlace[$placeId],
+                ];
+            }
+        }
+
+        $remoteSum = array_sum($remoteByPlace);
+        $localSum = array_sum($localByPlace);
+
+        $calculator = new \yamaguchi\regionsync\services\AvailabilityCalculator();
+        $calculator->useCache = false;
+        $report = $calculator->inspect($itemId, $geoCityId);
+
+        $this->stdout("itemId={$itemId}, geoCityId={$geoCityId}" . PHP_EOL);
+        $this->stdout('remote rows: ' . count($remoteRows) . ', sum: ' . $remoteSum . PHP_EOL);
+        $this->stdout('local rows:  ' . count($localRows) . ', sum: ' . $localSum . PHP_EOL);
+        $this->stdout('missing_local: ' . count($missingLocal) . PHP_EOL);
+        $this->printPlaceQuantities($missingLocal);
+        $this->stdout('extra_local: ' . count($extraLocal) . PHP_EOL);
+        $this->printPlaceQuantities($extraLocal);
+        $this->stdout('quantity_diff: ' . count($quantityDiff) . PHP_EOL);
+        $this->printQuantityDiff($quantityDiff);
+        $this->stdout('calculated availability: ' . $report['availability'] . PHP_EOL);
+        $this->stdout('calculated title: ' . $report['title'] . PHP_EOL);
+
+        return empty($missingLocal) && empty($extraLocal) && empty($quantityDiff) && (int)$remoteSum === (int)$localSum
+            ? ExitCode::OK
+            : ExitCode::UNSPECIFIED_ERROR;
+    }
+
+    /**
      * Логирует наличие товара по всем городам из new_storage_city.
      *
      * Пример: php yii availability/log-item 188
@@ -253,5 +341,112 @@ class AvailabilityCommand extends Controller
         }
 
         return ExitCode::OK;
+    }
+
+    private function fetchRemoteAvailabilityData(string $apiHost, int $geoCityId): ?array
+    {
+        $path = AvailabilitySyncService::ENDPOINT_PATH;
+        $endpoint = rtrim($apiHost, '/') . '/' . $path . '?geoCityId=' . $geoCityId;
+        $signedUrl = $this->signedRequest($endpoint, $path);
+
+        try {
+            $client = new Client([
+                'transport' => 'yii\httpclient\CurlTransport',
+                'requestConfig' => [
+                    'options' => [
+                        CURLOPT_FOLLOWLOCATION => true,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_SSL_VERIFYHOST => false,
+                    ],
+                ],
+            ]);
+
+            $response = $client->createRequest()
+                ->setMethod('GET')
+                ->setUrl($signedUrl)
+                ->addHeaders([
+                    'User-Agent' => 'YamaguchiAvailabilityCompare/1.0',
+                    'Accept' => 'application/json',
+                ])
+                ->addOptions([
+                    'timeout' => 60.0,
+                    'connectTimeout' => 10.0,
+                ])
+                ->send();
+
+            if (!$response->isOk) {
+                $this->stderr("HTTP {$response->statusCode} from {$endpoint}" . PHP_EOL);
+                return null;
+            }
+
+            $data = json_decode($response->content, true);
+            return is_array($data) ? $data : null;
+        } catch (\Exception $e) {
+            $this->stderr($e->getMessage() . PHP_EOL);
+            return null;
+        }
+    }
+
+    private function filterPlaceProductsByItemId(array $rows, int $itemId): array
+    {
+        $result = [];
+
+        foreach ($rows as $row) {
+            if ((int)($row['item_id'] ?? 0) === $itemId) {
+                $result[] = [
+                    'place_id' => (int)$row['place_id'],
+                    'item_id' => (int)$row['item_id'],
+                    'quantity' => (int)$row['quantity'],
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    private function getLocalPlaceProducts(int $itemId, int $geoCityId): array
+    {
+        return Yii::$app->db->createCommand(
+            'SELECT spp.place_id, spp.item_id, spp.quantity
+             FROM {{%new_storage_place_product}} spp
+             INNER JOIN {{%new_storage_place}} sp ON sp.place_id = spp.place_id
+             WHERE spp.item_id = :itemId
+               AND sp.geo_city_id = :geoCityId
+               AND spp.quantity > 0
+             ORDER BY spp.place_id',
+            [
+                ':itemId' => $itemId,
+                ':geoCityId' => $geoCityId,
+            ]
+        )->queryAll();
+    }
+
+    private function indexQuantityByPlace(array $rows): array
+    {
+        $result = [];
+
+        foreach ($rows as $row) {
+            $placeId = (int)$row['place_id'];
+            if (!isset($result[$placeId])) {
+                $result[$placeId] = 0;
+            }
+            $result[$placeId] += (int)$row['quantity'];
+        }
+
+        return $result;
+    }
+
+    private function printPlaceQuantities(array $items): void
+    {
+        foreach ($items as $placeId => $quantity) {
+            $this->stdout("  place_id={$placeId}, quantity={$quantity}" . PHP_EOL);
+        }
+    }
+
+    private function printQuantityDiff(array $items): void
+    {
+        foreach ($items as $placeId => $quantity) {
+            $this->stdout("  place_id={$placeId}, remote={$quantity['remote']}, local={$quantity['local']}" . PHP_EOL);
+        }
     }
 }

@@ -25,6 +25,11 @@ class PriceImporter
 
         // Проверка формата данных
         if (!is_array($dataFromYamaguchi)) {
+            $this->logPriceUpdateEvent('fetch_error', [
+                'source_url' => $url,
+                'message' => 'Некорректный формат данных от источника',
+            ]);
+
             return [
                 'status' => 'error',
                 'message' => 'Некорректный формат данных от источника',
@@ -33,6 +38,11 @@ class PriceImporter
         }
 
         $this->logIncomingItemIds($dataFromYamaguchi, $url);
+        $this->logPriceUpdateEvent('start', [
+            'site' => $site['id'] ?? 'unknown',
+            'source_url' => $url,
+            'total' => count($dataFromYamaguchi),
+        ]);
 
         // Обработка каждого товара
         foreach ($dataFromYamaguchi as $item) {
@@ -59,9 +69,21 @@ class PriceImporter
 
                 if ($affectedRows > 0) {
                     $updated++;
+                    $this->logPriceUpdateEvent('price_updated', [
+                        'itemId' => $item['itemId'],
+                        'price' => $item['price'],
+                        'priceAction' => $item['priceAction'] ?? null,
+                        'affected_rows' => $affectedRows,
+                    ]);
                 }
             } catch (\Exception $e) {
                 $errors[] = 'Ошибка обновления товара ' . $item['itemId'] . ': ' . $e->getMessage();
+                $this->logPriceUpdateEvent('update_error', [
+                    'itemId' => $item['itemId'],
+                    'price' => $item['price'],
+                    'priceAction' => $item['priceAction'] ?? null,
+                    'message' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -106,7 +128,35 @@ class PriceImporter
             $result['error_count'] = count($errors);
         }
 
+        $this->logPriceUpdateEvent('finish', [
+            'site' => $result['site'],
+            'updated' => $updated,
+            'skipped_without_item_id' => $skippedWithoutItemId,
+            'error_count' => count($errors),
+        ]);
+
         return $result;
+    }
+
+    private function logPriceUpdateEvent($event, array $context = [])
+    {
+        try {
+            $logDir = Yii::getAlias('@runtime/logs');
+            FileHelper::createDirectory($logDir);
+            $logFile = $logDir . DIRECTORY_SEPARATOR . 'regionsync-price-updates.log';
+            $row = array_merge([
+                'date' => date('Y-m-d H:i:s'),
+                'event' => $event,
+            ], $context);
+
+            file_put_contents(
+                $logFile,
+                json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
+                FILE_APPEND | LOCK_EX
+            );
+        } catch (\Exception $e) {
+            Yii::warning('Не удалось записать лог обновления цен: ' . $e->getMessage(), __METHOD__);
+        }
     }
 
     private function logIncomingItemIds(array $items, $sourceUrl)
@@ -202,12 +252,15 @@ class PriceImporter
         \Yii::$app->cache->delete($cacheKey);
 
         $path = 'regions/export-data/get-prices';
-        $url = rtrim($url, '/');
-        if (substr($url, -strlen($path)) !== $path) {
-            $url .= '/' . $path;
+        $pathForUrl = '/' . ltrim($path, '/');
+        $currentPath = parse_url($url, PHP_URL_PATH) ?: '';
+        $endpoint = rtrim($url, '/');
+
+        if (rtrim($currentPath, '/') !== $pathForUrl) {
+            $endpoint .= $pathForUrl;
         }
 
-        $url = $this->signedRequest($url, $path);
+        $url = $this->signedRequest($endpoint, $path);
 
         $data = \Yii::$app->cache->getOrSet(
             $cacheKey,

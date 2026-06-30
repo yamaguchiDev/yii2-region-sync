@@ -26,8 +26,8 @@ use Yii;
  */
 class AvailabilityCalculator
 {
-    /** Показывать точное кол-во если от 1 до 2 шт включительно */
-    const QUANTITY_SHOW_MIN = 1;
+    /** Показывать уточнение, если осталось ровно 2 шт; 1 шт выводится как обычное наличие. */
+    const QUANTITY_SHOW_MIN = 2;
     const QUANTITY_SHOW_MAX = 2;
 
     /** Длительность кэша, секунд */
