@@ -27,25 +27,42 @@ class ImportController extends Controller
     }
 
     /**
-     * Запуск массового импорта (как было раньше)
+     * Запуск обновления цен с главного сайта.
+     *
+     * Доступен также по алиасу регионального проекта: /product/import/run?token=...
      */
     public function actionRun($token)
     {
+        Yii::$app->response->format = Response::FORMAT_JSON;
+
         $module = Yii::$app->getModule('regionsync');
         if ($token !== $module->apiToken) {
             throw new \yii\web\ForbiddenHttpException('Invalid token');
         }
 
+        $host = rtrim($module->apiHost, '/');
         $site = [
-            'id' => '1', // В модуле этот параметр может быть фиксированным или тоже из настроек
-            'host' => $module->apiHost,
-            'url' => $module->apiHost, 
+            'id' => 'web',
+            'host' => $host,
+            'url' => $host,
         ];
-        
-        $importer = new PriceImporter();
-        $result = $importer->importForSite($site);
 
-        Yii::$app->response->format = Response::FORMAT_JSON;
+        try {
+            $result = (new PriceImporter())->importForSite($site);
+        } catch (\Exception $e) {
+            Yii::error('[PriceSyncWeb] Ошибка обновления цен: ' . $e->getMessage(), __METHOD__);
+            Yii::$app->response->statusCode = 500;
+
+            return [
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'updated' => 0,
+            ];
+        }
+
+        if (($result['status'] ?? null) !== 'ok') {
+            Yii::$app->response->statusCode = 500;
+        }
 
         return $result;
     }
