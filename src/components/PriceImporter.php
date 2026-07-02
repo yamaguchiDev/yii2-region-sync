@@ -18,6 +18,7 @@ class PriceImporter
         $url = $site['url'] ?? $site['host']; // Поддержка старого и нового формата
         $errors = [];
         $updated = 0;
+        $publishedUpdated = 0;
         $skippedWithoutItemId = 0;
 
         // Получаем данные
@@ -59,7 +60,7 @@ class PriceImporter
 
             try {
                 // Обновляем цену в БД (Оставляем привязку к локальным моделям сайта)
-                $affectedRows = ProductVariant::updateAll(
+                $priceAffectedRows = ProductVariant::updateAll(
                     [
                         'price' => $item['price'],
                         'priceAction' => $item['priceAction'] ?? null,
@@ -67,13 +68,21 @@ class PriceImporter
                     ['itemId' => $item['itemId']]
                 );
 
-                if ($affectedRows > 0) {
+                $publishedAffectedRows = 0;
+                if (array_key_exists('published', $item)) {
+                    $publishedAffectedRows = $this->updatePublishedByItemId($item['itemId'], $item['published']);
+                    $publishedUpdated += $publishedAffectedRows;
+                }
+
+                if ($priceAffectedRows > 0 || $publishedAffectedRows > 0) {
                     $updated++;
                     $this->logPriceUpdateEvent('price_updated', [
                         'itemId' => $item['itemId'],
                         'price' => $item['price'],
                         'priceAction' => $item['priceAction'] ?? null,
-                        'affected_rows' => $affectedRows,
+                        'published' => $item['published'] ?? null,
+                        'price_affected_rows' => $priceAffectedRows,
+                        'published_affected_rows' => $publishedAffectedRows,
                     ]);
                 }
             } catch (\Exception $e) {
@@ -119,6 +128,7 @@ class PriceImporter
             'status' => 'ok',
             'site' => $site['id'] ?? 'unknown',
             'updated' => $updated,
+            'published_updated' => $publishedUpdated,
             'skipped_without_item_id' => $skippedWithoutItemId,
         ];
 
@@ -131,11 +141,26 @@ class PriceImporter
         $this->logPriceUpdateEvent('finish', [
             'site' => $result['site'],
             'updated' => $updated,
+            'published_updated' => $publishedUpdated,
             'skipped_without_item_id' => $skippedWithoutItemId,
             'error_count' => count($errors),
         ]);
 
         return $result;
+    }
+
+    private function updatePublishedByItemId($itemId, $published)
+    {
+        return Yii::$app->db->createCommand(
+            'UPDATE {{%goods}} g '
+            . 'INNER JOIN {{%new_product_variant}} pv ON pv.productId = g.id '
+            . 'SET g.published = :published '
+            . 'WHERE pv.itemId = :itemId',
+            [
+                ':published' => (int)$published ? 1 : 0,
+                ':itemId' => (int)$itemId,
+            ]
+        )->execute();
     }
 
     private function logPriceUpdateEvent($event, array $context = [])

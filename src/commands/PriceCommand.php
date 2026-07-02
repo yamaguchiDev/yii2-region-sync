@@ -62,12 +62,14 @@ class PriceCommand extends Controller
 
         $status = $result['status'] ?? 'unknown';
         $updated = $result['updated'] ?? 0;
+        $publishedUpdated = $result['published_updated'] ?? 0;
         $skippedWithoutItemId = $result['skipped_without_item_id'] ?? 0;
         $errorCount = $result['error_count'] ?? 0;
 
         $this->stdout(
             '[PriceSync] Результат: status=' . $status
             . ', updated=' . $updated
+            . ', published_updated=' . $publishedUpdated
             . ', skipped_without_item_id=' . $skippedWithoutItemId
             . ', error_count=' . $errorCount
             . PHP_EOL
