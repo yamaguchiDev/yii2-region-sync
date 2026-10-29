@@ -3,7 +3,7 @@
 namespace yamaguchi\regionsync\services;
 
 use yamaguchi\regionsync\models\availability\AvailabilityResult;
-use yamaguchi\regionsync\models\availability\StorageItem;
+use yamaguchi\regionsync\models\availability\StorageCity;
 use yamaguchi\regionsync\models\availability\StoragePlace;
 use yamaguchi\regionsync\models\availability\StoragePlaceProduct;
 use Yii;
@@ -72,7 +72,7 @@ class AvailabilityCalculator
      * @param int       $geoCityId  geo_city_id региона из storage_city
      * @return AvailabilityResult
      */
-    public function calculate($itemId, int $geoCityId): AvailabilityResult
+    public function calculate($itemId, int $geoCityId, int $pointForSaleId = null): AvailabilityResult
     {
         $result = new AvailabilityResult();
 
@@ -80,7 +80,7 @@ class AvailabilityCalculator
             return $result;
         }
 
-        $cacheKey = $this->getCacheKey($itemId, $geoCityId);
+        $cacheKey = $this->getCacheKey($itemId, $geoCityId, $pointForSaleId);
 
         if ($this->useCache) {
             $cached = $this->getFromCache($cacheKey);
@@ -89,7 +89,7 @@ class AvailabilityCalculator
             }
         }
 
-        $data = $this->calculateData($itemId, $geoCityId);
+        $data = $this->calculateData($itemId, $geoCityId, $pointForSaleId);
 
         return $this->storeInCache($cacheKey, $data['result']);
     }
@@ -99,7 +99,7 @@ class AvailabilityCalculator
      *
      * @param int|int[] $itemId
      */
-    private function calculateData($itemId, int $geoCityId): array
+    private function calculateData($itemId, int $geoCityId, int $pointForSaleId = null): array
     {
         $result = new AvailabilityResult();
 
@@ -130,12 +130,14 @@ class AvailabilityCalculator
         }
 
         // 2. Суммируем остатки по основным складам региона
-        $sum = $this->getSumInRegion($itemId, $geoCityId);
+        $sum = $this->getSumInRegion($itemId, $geoCityId, $pointForSaleId);
         $data['sumInRegion'] = $sum;
+        $result->quantity = $sum;
 
         // 3. Суммируем остатки по шоу-рум складам региона
-        $sumShowroom = $this->getSumOnShowroom($itemId, $geoCityId);
+        $sumShowroom = $this->getSumOnShowroom($itemId, $geoCityId, $pointForSaleId);
         $data['sumOnShowroom'] = $sumShowroom;
+        $result->showroomQuantity = $sumShowroom;
 
         // 4. Устанавливаем точное значение, если товара мало (1–2 шт)
         if ($sum >= self::QUANTITY_SHOW_MIN && $sum <= self::QUANTITY_SHOW_MAX) {
@@ -158,8 +160,9 @@ class AvailabilityCalculator
         }
 
         // 8. Проверяем откуда будет доставка (только для не-московских регионов)
-        if ($geoCityId !== StoragePlace::ID_MAIN) {
-            $result->deliveryFrom = $this->getDeliveryFrom($itemId);
+        if ($geoCityId !== StorageCity::GEO_CITY_ID_MOSCOW) {
+            $result->moscowQuantity = $this->getMoscowQuantity($itemId);
+            $result->deliveryFrom = $result->moscowQuantity > 0 ? AvailabilityResult::DELIVERY_FROM_MOSCOW : null;
         }
 
         return $data;
@@ -212,16 +215,17 @@ class AvailabilityCalculator
      *
      * @param int|int[] $itemId
      */
-    private function getSumInRegion($itemId, int $geoCityId): int
+    private function getSumInRegion($itemId, int $geoCityId, int $pointForSaleId = null): int
     {
         $query = StoragePlaceProduct::find()
             ->alias('spp')
             ->select(new \yii\db\Expression('COALESCE(SUM(spp.quantity), 0) as total'))
             ->leftJoin(['sp' => 'new_storage_place'], 'sp.place_id = spp.place_id')
             ->where(['spp.item_id' => $itemId])
+            ->andWhere(['sp.closed' => 0])
             ->andWhere(['>', 'spp.quantity', 0]);
 
-        if ($geoCityId === StoragePlace::ID_MAIN) {
+        if ($geoCityId === StorageCity::GEO_CITY_ID_MOSCOW && $pointForSaleId === null) {
             // Московский регион: только по главному складу
             $query->andWhere(['sp.place_id' => StoragePlace::ID_MAIN]);
         } else {
@@ -232,6 +236,10 @@ class AvailabilityCalculator
             ]);
         }
 
+        if ($pointForSaleId !== null) {
+            $query->andWhere(['sp.point_for_sales_id' => $pointForSaleId]);
+        }
+
         $result = $query->asArray()->one();
         return (int)($result['total'] ?? 0);
     }
@@ -240,13 +248,9 @@ class AvailabilityCalculator
      * Суммирует остатки по шоу-рум складам города
      * @param int|int[] $itemId
      */
-    private function getSumOnShowroom($itemId, int $geoCityId): int
+    private function getSumOnShowroom($itemId, int $geoCityId, int $pointForSaleId = null): int
     {
-        if ($geoCityId === StoragePlace::ID_MAIN) {
-            return 0; // для Москвы шоу-рум считается отдельно (не нужен в регионе)
-        }
-
-        $result = StoragePlaceProduct::find()
+        $query = StoragePlaceProduct::find()
             ->alias('spp')
             ->select(new \yii\db\Expression('COALESCE(SUM(spp.quantity), 0) as total'))
             ->leftJoin(['sp' => 'new_storage_place'], 'sp.place_id = spp.place_id')
@@ -254,10 +258,13 @@ class AvailabilityCalculator
                 'spp.item_id'    => $itemId,
                 'sp.type_code'   => StoragePlace::TYPE_CODE_SHOWROOM,
                 'sp.geo_city_id' => $geoCityId,
+                'sp.closed' => 0,
             ])
-            ->andWhere(['>', 'spp.quantity', 0])
-            ->asArray()
-            ->one();
+            ->andWhere(['>', 'spp.quantity', 0]);
+        if ($pointForSaleId !== null) {
+            $query->andWhere(['sp.point_for_sales_id' => $pointForSaleId]);
+        }
+        $result = $query->asArray()->one();
 
         return (int)($result['total'] ?? 0);
     }
@@ -267,27 +274,28 @@ class AvailabilityCalculator
      * Если товар есть на московском главном складе — доставка из Москвы.
      * @param int|int[] $itemId
      */
-    private function getDeliveryFrom($itemId): ?string
+    private function getMoscowQuantity($itemId): int
     {
-        $exists = StoragePlaceProduct::find()
+        return (int)StoragePlaceProduct::find()
+            ->alias('spp')
+            ->innerJoin(['sp' => StoragePlace::tableName()], 'sp.place_id = spp.place_id')
             ->where([
-                'place_id' => StoragePlace::ID_MAIN,
-                'item_id'  => $itemId,
+                'spp.place_id' => StoragePlace::ID_MAIN,
+                'spp.item_id'  => $itemId,
+                'sp.closed' => 0,
             ])
-            ->andWhere(['>', 'quantity', 0])
-            ->exists();
-
-        return $exists ? AvailabilityResult::DELIVERY_FROM_MOSCOW : null;
+            ->andWhere(['>', 'spp.quantity', 0])
+            ->sum('spp.quantity');
     }
 
     // =========================================================================
     // Кэш-методы
     // =========================================================================
 
-    private function getCacheKey($itemId, int $geoCityId): string
+    private function getCacheKey($itemId, int $geoCityId, int $pointForSaleId = null): string
     {
         $ids = implode(',', (array)$itemId);
-        return "availability:{$ids}:{$geoCityId}";
+        return "availability:v2:{$ids}:{$geoCityId}:" . ($pointForSaleId === null ? 'city' : $pointForSaleId);
     }
 
     private function getFromCache(string $key): ?AvailabilityResult
@@ -306,6 +314,9 @@ class AvailabilityCalculator
         $result->value         = $data['value']         ?? null;
         $result->hasTestDrive  = $data['hasTestDrive']  ?? false;
         $result->deliveryFrom  = $data['deliveryFrom']  ?? null;
+        $result->quantity = (int)($data['quantity'] ?? 0);
+        $result->moscowQuantity = (int)($data['moscowQuantity'] ?? 0);
+        $result->showroomQuantity = (int)($data['showroomQuantity'] ?? 0);
         return $result;
     }
 
@@ -322,11 +333,11 @@ class AvailabilityCalculator
      * Сбросить кэш наличия для конкретного товара
      * @param int|int[] $itemId
      */
-    public function clearCache($itemId, int $geoCityId): void
+    public function clearCache($itemId, int $geoCityId, int $pointForSaleId = null): void
     {
         $cache = Yii::$app->cache ?? null;
         if ($cache) {
-            $cache->delete($this->getCacheKey($itemId, $geoCityId));
+            $cache->delete($this->getCacheKey($itemId, $geoCityId, $pointForSaleId));
         }
     }
 }

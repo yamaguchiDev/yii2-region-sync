@@ -7,6 +7,8 @@ namespace yamaguchi\regionsync\models\availability;
  */
 class AvailabilityResult
 {
+    /** Город или модуль не определён: не подменять регион старым общим остатком. */
+    const AVAILABILITY_UNKNOWN = 'unknown';
     /** Полноценное наличие на складе */
     const AVAILABILITY_ON_MAIN = 'main';
     /** Наличие в шоу-руме */
@@ -37,6 +39,21 @@ class AvailabilityResult
     /** @var string|null Откуда доставка: 'moscow' или null */
     public $deliveryFrom;
 
+    /** @var int Остаток на основных складах выбранного города. */
+    public $quantity = 0;
+    /** @var int Остаток московского основного склада. */
+    public $moscowQuantity = 0;
+    /** @var int Витринные образцы выбранного города (не продажный остаток). */
+    public $showroomQuantity = 0;
+
+    public function getOrderableQuantity(): int
+    {
+        if (!$this->isAvailable()) {
+            return 0;
+        }
+        return $this->quantity > 0 ? $this->quantity : $this->moscowQuantity;
+    }
+
     public function toArray(): array
     {
         return [
@@ -44,6 +61,9 @@ class AvailabilityResult
             'value'         => $this->value,
             'hasTestDrive'  => $this->hasTestDrive,
             'deliveryFrom'  => $this->deliveryFrom,
+            'quantity' => $this->quantity,
+            'moscowQuantity' => $this->moscowQuantity,
+            'showroomQuantity' => $this->showroomQuantity,
         ];
     }
 
@@ -53,6 +73,7 @@ class AvailabilityResult
     public function getTitle(): string
     {
         switch ($this->availability) {
+            case self::AVAILABILITY_UNKNOWN:    return 'Уточняйте наличие';
             case self::AVAILABILITY_DISCONTINUED: return 'Снят с производства';
             case self::AVAILABILITY_PREORDER:     return 'Предзаказ';
             // Мало товара (1–2 шт) — уточняйте наличие
@@ -64,7 +85,11 @@ class AvailabilityResult
             $this->availability === self::AVAILABILITY_NO
             && $this->deliveryFrom === self::DELIVERY_FROM_MOSCOW
         ) {
-            return 'Есть доставка из Москвы';
+            return 'есть доставка из Москвы';
+        }
+
+        if ($this->availability === self::AVAILABILITY_NO && $this->hasTestDrive) {
+            return 'Витринный образец';
         }
 
         return $this->isAvailable() ? 'Есть в наличии' : 'Нет в наличии';

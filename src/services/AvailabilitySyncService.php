@@ -68,6 +68,27 @@ class AvailabilitySyncService
         if ($data === null) {
             return ['success' => false, 'message' => 'Не удалось получить данные с главного сайта', 'counts' => []];
         }
+        // Only a complete snapshot for the requested city may replace its previous stock.
+        if (!isset($data['storage_city']['geo_city_id'])
+            || (int)$data['storage_city']['geo_city_id'] !== $this->geoCityId
+            || !isset($data['storage_place'], $data['storage_item'], $data['storage_place_product'])
+            || !is_array($data['storage_place']) || !is_array($data['storage_item']) || !is_array($data['storage_place_product'])) {
+            return ['success' => false, 'message' => 'Некорректный snapshot наличия для города', 'counts' => []];
+        }
+        $placeIds = [];
+        foreach ($data['storage_place'] as $place) {
+            if (empty($place['place_id']) || !isset($place['geo_city_id'])
+                || ((int)$place['geo_city_id'] !== $this->geoCityId && (int)$place['place_id'] !== 5514)) {
+                return ['success' => false, 'message' => 'Склад не относится к запрошенному городу', 'counts' => []];
+            }
+            $placeIds[(int)$place['place_id']] = true;
+        }
+        foreach ($data['storage_place_product'] as $row) {
+            if (!isset($row['place_id'], $row['item_id'], $row['quantity'])
+                || !isset($placeIds[(int)$row['place_id']]) || (int)$row['item_id'] <= 0 || !is_numeric($row['quantity'])) {
+                return ['success' => false, 'message' => 'Некорректная строка остатков', 'counts' => []];
+            }
+        }
 
         // 2. Сохраняем данные в локальные таблицы
         $counts = [];
@@ -75,6 +96,11 @@ class AvailabilitySyncService
         try {
             $counts['new_storage_place']         = $this->upsertStoragePlaces($data['storage_place'] ?? []);
             $counts['new_storage_item']          = $this->upsertStorageItems($data['storage_item'] ?? []);
+            // API exports only positive quantities. Missing rows mean zero, including Moscow delivery stock.
+            $scope = (new \yii\db\Query())->select('place_id')->from('{{%new_storage_place}}')
+                ->where(['or', ['geo_city_id' => $this->geoCityId], ['place_id' => 5514]])->column();
+            Yii::$app->db->createCommand()->update('{{%new_storage_place_product}}', ['quantity' => 0],
+                ['place_id' => $scope])->execute();
             $counts['new_storage_place_product'] = $this->upsertStoragePlaceProducts($data['storage_place_product'] ?? []);
             $this->upsertStorageCity($data['storage_city'] ?? []);
 

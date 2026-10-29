@@ -36,6 +36,9 @@ class RegionSyncModule extends Module
      */
     public $geoCityId;
 
+    /** @var bool Отключается для проверок изменяемых остатков без кэша. */
+    public $useAvailabilityCache = true;
+
     /**
      * @inheritdoc
      */
@@ -45,6 +48,7 @@ class RegionSyncModule extends Module
 
         if (\Yii::$app instanceof \yii\console\Application) {
             $this->controllerNamespace = 'yamaguchi\regionsync\commands';
+            $this->controllerMap['product'] = \yamaguchi\regionsync\commands\ProductCommand::class;
         }
 
         // инициализация модуля
@@ -72,38 +76,27 @@ class RegionSyncModule extends Module
      */
     protected function resolveGeoCityId()
     {
-        $host = \Yii::$app->request->hostInfo;
-        // Извлекаем часть между // и первым . (например, "murmansk" из "http://murmansk.site.com")
-        preg_match("/\/\/(.*?)\./", $host, $matches);
-        $subdomain = isset($matches[1]) ? $matches[1] : null;
-
-        if (!$subdomain) {
-            return;
-        }
-
         try {
-            // 1. Ищем site_key в таблице sites
-            $site = (new \yii\db\Query())
-                ->select(['site_key'])
-                ->from('{{%sites}}')
-                ->where(['like', 'domain', $subdomain])
-                ->one();
-
-            if ($site && !empty($site['site_key'])) {
-                // 2. Ищем geo_city_id в new_storage_city по этому ключу
-                $city = (new \yii\db\Query())
-                    ->select(['geo_city_id'])
-                    ->from('{{%new_storage_city}}')
-                    ->where(['system_name' => $site['site_key']])
-                    ->one();
-
-                if ($city) {
-                    $this->geoCityId = $city['geo_city_id'];
-                }
-            }
+            $this->geoCityId = $this->getGeoCityIdForHost(\Yii::$app->request->hostInfo);
         } catch (\Exception $e) {
             \Yii::error("Ошибка автоматического определения geoCityId: " . $e->getMessage(), __METHOD__);
         }
+    }
+
+    /** Точное сопоставление домена сайта с городом, без LIKE и случайного соседнего региона. */
+    public function getGeoCityIdForHost(string $host): ?int
+    {
+        $host = strtolower((string)parse_url(strpos($host, '://') === false ? 'http://' . $host : $host, PHP_URL_HOST));
+        $host = preg_replace('/^www\./', '', $host);
+        $domains = [$host];
+        if (substr($host, -4) === '.loc') {
+            $domains[] = substr($host, 0, -4) . '.ru';
+        }
+        $ids = (new \yii\db\Query())->select('city.geo_city_id')->distinct()
+            ->from(['site' => '{{%sites}}'])
+            ->innerJoin(['city' => '{{%new_storage_city}}'], 'city.system_name = site.site_key')
+            ->where(['site.domain' => $domains])->column();
+        return count($ids) === 1 ? (int)$ids[0] : null;
     }
 
     /**
@@ -112,13 +105,15 @@ class RegionSyncModule extends Module
      * @param int|string $itemId
      * @return services\AvailabilityResult|null
      */
-    public function getProductAvailability($itemId)
+    public function getProductAvailability($itemId, int $geoCityId = null, int $pointForSaleId = null)
     {
-        if (!$this->geoCityId) {
+        $geoCityId = $geoCityId ?? (int)$this->geoCityId;
+        if ($geoCityId <= 0) {
             return null;
         }
         $calculator = new services\AvailabilityCalculator();
-        return $calculator->calculate((int)$itemId, (int)$this->geoCityId);
+        $calculator->useCache = $this->useAvailabilityCache;
+        return $calculator->calculate((int)$itemId, $geoCityId, $pointForSaleId);
     }
 
     /**
